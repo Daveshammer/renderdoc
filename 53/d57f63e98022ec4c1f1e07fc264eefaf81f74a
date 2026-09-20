@@ -1,0 +1,38 @@
+renderdoc/driver/vulkan/vk_core.cpp
+  s_dbfef47d189f58::t_85f6f8c077a213 49-52
+  s_dbfef47d189f58::t_482fb96227deb4 3576
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "53d57f63e98022ec4c1f1e07fc264eefaf81f74a",
+  "prompts": {},
+  "humans": {
+    "h_36d514963dafce": {
+      "author": "arch_tools_005 <damondai@lisuantech.com>"
+    }
+  },
+  "sessions": {
+    "s_dbfef47d189f58": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa90ea44b66d7d42b1c5c91",
+        "model": "deepseek_v4_flash_official__dev"
+      },
+      "human_author": "arch_tools_005 <damondai@lisuantech.com>",
+      "custom_attributes": {
+        "operation_id": "6aaf527f988d8d14f9e04387",
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "tool_type": "agent",
+        "source_scene": "unknown",
+        "dedupe_key": "6aa90ea44b66d7d42b1c5c91:6aaf527f988d8d14f9e04387:afterEdit:3b1e1bda",
+        "external_session_id": "6aa90ea44b66d7d42b1c5c91",
+        "tool_id": "Edit",
+        "session_id": "6aa90ea44b66d7d42b1c5c91",
+        "tool_use_id": "6aaf527f988d8d14f9e04387",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
