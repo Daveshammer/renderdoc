@@ -2595,9 +2595,12 @@ SERIALISE_VK_HANDLES();
   PNEXT_UNSUPPORTED(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV)                  \
                                                                                                        \
   /* VK_NV_ray_tracing_motion_blur */                                                                  \
-  PNEXT_UNSUPPORTED(VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV)        \
-  PNEXT_UNSUPPORTED(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MOTION_BLUR_FEATURES_NV)             \
-  PNEXT_UNSUPPORTED(VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV)                           \
+  PNEXT_STRUCT(VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV,             \
+               VkAccelerationStructureGeometryMotionTrianglesDataNV)                                   \
+  PNEXT_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MOTION_BLUR_FEATURES_NV,                  \
+               VkPhysicalDeviceRayTracingMotionBlurFeaturesNV)                                         \
+  PNEXT_STRUCT(VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV,                                \
+               VkAccelerationStructureMotionInfoNV)                                                    \
                                                                                                        \
   /* VK_NV_ray_tracing_validation */                                                                   \
   PNEXT_UNSUPPORTED(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_VALIDATION_FEATURES_NV)              \
@@ -14208,6 +14211,56 @@ void Deserialise(const VkAccelerationStructureGeometryInstancesDataKHR &el)
 }
 
 template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, VkAccelerationStructureGeometryMotionTrianglesDataNV &el)
+{
+  RDCASSERT(ser.IsReading() ||
+            el.sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV);
+  SerialiseNext(ser, el.sType, el.pNext);
+
+  SERIALISE_MEMBER(vertexData);
+}
+
+template <>
+void Deserialise(const VkAccelerationStructureGeometryMotionTrianglesDataNV &el)
+{
+  DeserialiseNext(el.pNext);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, VkAccelerationStructureMotionInfoNV &el)
+{
+  RDCASSERT(ser.IsReading() ||
+            el.sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV);
+  SerialiseNext(ser, el.sType, el.pNext);
+
+  SERIALISE_MEMBER(maxInstances);
+  SERIALISE_MEMBER(flags);
+}
+
+template <>
+void Deserialise(const VkAccelerationStructureMotionInfoNV &el)
+{
+  DeserialiseNext(el.pNext);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, VkPhysicalDeviceRayTracingMotionBlurFeaturesNV &el)
+{
+  RDCASSERT(ser.IsReading() ||
+            el.sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MOTION_BLUR_FEATURES_NV);
+  SerialiseNext(ser, el.sType, el.pNext);
+
+  SERIALISE_MEMBER(rayTracingMotionBlur);
+  SERIALISE_MEMBER(rayTracingMotionBlurPipelineTraceRaysIndirect);
+}
+
+template <>
+void Deserialise(const VkPhysicalDeviceRayTracingMotionBlurFeaturesNV &el)
+{
+  DeserialiseNext(el.pNext);
+}
+
+template <typename SerialiserType>
 void DoSerialise(SerialiserType &ser, VkAccelerationStructureGeometryKHR &el)
 {
   RDCASSERT(ser.IsReading() || el.sType == VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR);
@@ -14715,6 +14768,9 @@ void DoSerialise(SerialiserType &ser, VkAccelerationStructureInfo::GeometryData 
 
   SERIALISE_MEMBER(buildRangeInfo);
   SERIALISE_MEMBER(memOffset);
+
+  SERIALISE_MEMBER(hasMotion);
+  SERIALISE_MEMBER(motionMemOffset);
 }
 
 template <typename SerialiserType>
@@ -14722,6 +14778,9 @@ void DoSerialise(SerialiserType &ser, VkAccelerationStructureInfo &el)
 {
   SERIALISE_MEMBER(type);
   SERIALISE_MEMBER_VKFLAGS(VkBuildAccelerationStructureFlagsKHR, flags);
+  SERIALISE_MEMBER(hasMotionInfo);
+  SERIALISE_MEMBER(maxInstances);
+  SERIALISE_MEMBER(motionInfoFlags);
   SERIALISE_MEMBER(geometryData);
   SERIALISE_MEMBER(memSize);
 }
