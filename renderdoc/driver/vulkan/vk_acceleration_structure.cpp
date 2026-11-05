@@ -75,9 +75,12 @@ uint64_t VkAccelerationStructureInfo::GetSerialisedSize() const
 {
   const uint64_t geomDataSize = geometryData.byteSize();
 
-  const uint64_t size = sizeof(VkAccelerationStructureTypeKHR) +          // type
-                        sizeof(VkBuildAccelerationStructureFlagsKHR) +    // flags
-                        sizeof(uint64_t) + geomDataSize;                  // geometryData;
+  const uint64_t size = sizeof(VkAccelerationStructureTypeKHR) +               // type
+                        sizeof(VkBuildAccelerationStructureFlagsKHR) +         // flags
+                        sizeof(bool) +                                         // hasMotionInfo
+                        sizeof(uint32_t) +                                     // maxInstances
+                        sizeof(VkAccelerationStructureMotionInfoFlagsNV) +     // motionInfoFlags
+                        sizeof(uint64_t) + geomDataSize;                       // geometryData;
 
   // Add the readbackmem buffer sizes
   const uint64_t bufferSize = sizeof(uint64_t) + memSize + WriteSerialiser::GetChunkAlignment();
@@ -86,12 +89,18 @@ uint64_t VkAccelerationStructureInfo::GetSerialisedSize() const
 }
 
 void VkAccelerationStructureInfo::convertGeometryData(
-    rdcarray<VkAccelerationStructureGeometryKHR> &geometry) const
+    rdcarray<VkAccelerationStructureGeometryKHR> &geometry)
 {
   geometry.clear();
+  motionStructs.clear();
 
-  for(const VkAccelerationStructureInfo::GeometryData &g : geometryData)
+  // Stable storage for the pNext structs the geometry array points at
+  motionStructs.resize(geometryData.size());
+
+  for(size_t geomIdx = 0; geomIdx < geometryData.size(); ++geomIdx)
   {
+    const VkAccelerationStructureInfo::GeometryData &g = geometryData[geomIdx];
+
     VkAccelerationStructureGeometryDataKHR geoUnion = {};
     switch(g.geometryType)
     {
@@ -110,9 +119,26 @@ void VkAccelerationStructureInfo::convertGeometryData(
         VkDeviceOrHostAddressConstKHR tData;
         tData.deviceAddress = g.buildRangeInfo.transformOffset ? g.memOffset : ~0ULL;
 
+        void *pNext = NULL;
+        if(g.hasMotion)
+        {
+          VkAccelerationStructureGeometryMotionTrianglesDataNV &motion = motionStructs[geomIdx];
+
+          VkDeviceOrHostAddressConstKHR mData;
+          mData.deviceAddress = g.motionMemOffset;
+
+          motion = {
+              VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV,
+              NULL,
+              mData,
+          };
+
+          pNext = &motion;
+        }
+
         geoUnion.triangles = {
             VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-            NULL,
+            pNext,
             g.tris.vertexFormat,
             vData,
             g.tris.vertexStride,
@@ -286,31 +312,58 @@ RDResult VulkanAccelerationStructureManager::CopyInputBuffers(
         // Gather the buffer requirements for each type
         VkMemoryRequirements mrq = {};
 
-        // Vertex buffer.  The complexity here is that the rangeInfo members are interpreted
-        // differently depending on whether or not index buffers are used
+        // don't take maxVertex as perfect, applications have no reason to set it correctly for
+        // everything to work with drivers, and likely no validation. Add an overestimate factor,
+        // clamped in 64-bit as the overestimate of an untrusted maxVertex can wrap
+        const uint32_t estimatedVertexCount = (uint32_t)RDCMIN(
+            (uint64_t)triInfo.maxVertex +
+                (uint64_t)(triInfo.maxVertex / 100) * Vulkan_Debug_RT_MaxVertexPercentIncrease() +
+                Vulkan_Debug_RT_MaxVertexIncrement(),
+            (uint64_t)0xffffffffULL);
+
+        // The rangeInfo members are interpreted differently depending on whether or not index
+        // buffers are used
+        auto setupVertexRange = [&](BufferData &data) {
+          if(indexData)
+          {
+            // don't read more than what is left in the buffer
+            data.size = RDCMIN(triInfo.vertexStride * estimatedVertexCount,
+                               data.rao.record->memSize - data.rao.offset);
+            data.SetReadPosition(0);
+          }
+          else
+          {
+            data.size = rangeInfo.primitiveCount * 3 * triInfo.vertexStride;
+            data.SetReadPosition(rangeInfo.primitiveOffset +
+                                 (triInfo.vertexStride * rangeInfo.firstVertex));
+          }
+        };
+
         ObjDisp(device)->GetBufferMemoryRequirements(Unwrap(device), vertexData.buf, &mrq);
         vertexData.alignment = mrq.alignment;
+        setupVertexRange(vertexData);
 
-        if(indexData)
-        {
-          // don't take maxVertex as perfect, applications have no reason to set it correctly for
-          // everything to work with drivers, and likely no validation. Add an overestimate factor
-          uint32_t untrustedVertexCount = triInfo.maxVertex;
-          uint32_t estimatedVertexCount =
-              untrustedVertexCount +
-              (untrustedVertexCount / 100) * Vulkan_Debug_RT_MaxVertexPercentIncrease() +
-              Vulkan_Debug_RT_MaxVertexIncrement();
+        // motion blur keeps the t = 1 vertices in the pNext chain
+        const VkAccelerationStructureGeometryMotionTrianglesDataNV *motionTri =
+            (const VkAccelerationStructureGeometryMotionTrianglesDataNV *)FindNextStruct(
+                &triInfo,
+                VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV);
 
-          // don't read more than what is left in the buffer
-          vertexData.size = RDCMIN(triInfo.vertexStride * estimatedVertexCount,
-                                   vertexData.rao.record->memSize - vertexData.rao.offset);
-          vertexData.SetReadPosition(0);
-        }
-        else
+        BufferData motionVertexData;
+        if(motionTri)
         {
-          vertexData.size = rangeInfo.primitiveCount * 3 * triInfo.vertexStride;
-          vertexData.SetReadPosition(rangeInfo.primitiveOffset +
-                                     (triInfo.vertexStride * rangeInfo.firstVertex));
+          motionVertexData = GetDeviceAddressData(motionTri->vertexData.deviceAddress);
+          if(!motionVertexData)
+          {
+            RDCERR("Unable to find VkBuffer for motion vertex data at 0x%llx",
+                   motionTri->vertexData.deviceAddress);
+            RETURN_ERROR_RESULT(ResultCode::InternalError,
+                                "Unable to find VkBuffer for AS motion vertex data");
+          }
+
+          ObjDisp(device)->GetBufferMemoryRequirements(Unwrap(device), motionVertexData.buf, &mrq);
+          motionVertexData.alignment = mrq.alignment;
+          setupVertexRange(motionVertexData);
         }
 
         // Index buffer
@@ -359,6 +412,21 @@ RDResult VulkanAccelerationStructureManager::CopyInputBuffers(
 
         inputBuffersData.push_back(vertexData);
         currentDstOffset += AlignUp(vertexData.size, vertexData.alignment);
+
+        if(motionVertexData)
+        {
+          geoData.hasMotion = true;
+          geoData.motionMemOffset = currentDstOffset;
+
+          motionVertexData.region = {
+              motionVertexData.GetReadPosition(),
+              currentDstOffset,
+              motionVertexData.size,
+          };
+
+          inputBuffersData.push_back(motionVertexData);
+          currentDstOffset += AlignUp(motionVertexData.size, motionVertexData.alignment);
+        }
 
         if(indexData)
         {
@@ -466,7 +534,13 @@ RDResult VulkanAccelerationStructureManager::CopyInputBuffers(
           continue;
         }
 
-        data.size = rangeInfo.primitiveCount * sizeof(VkAccelerationStructureInstanceKHR);
+        // motion blur uses a larger instance structure
+        const VkDeviceSize instanceSize =
+            (info.flags & VK_BUILD_ACCELERATION_STRUCTURE_MOTION_BIT_NV)
+                ? sizeof(VkAccelerationStructureMotionInstanceNV)
+                : sizeof(VkAccelerationStructureInstanceKHR);
+
+        data.size = rangeInfo.primitiveCount * instanceSize;
         data.SetReadPosition(rangeInfo.primitiveOffset);
 
         // Get the alignment
@@ -785,10 +859,20 @@ void VulkanAccelerationStructureManager::Apply(ResourceId id, VkInitialContents 
     vkr = m_pDriver->vkBindBufferMemory(d, asBuf, asMemory.mem, asMemory.offs);
     CHECK_VKR(m_pDriver, vkr);
 
+    // motion blur requires declaring the maximum instance count in the create info
+    VkAccelerationStructureMotionInfoNV motionInfo = {
+        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV,
+        NULL,
+        asInfo->maxInstances,
+        asInfo->motionInfoFlags,
+    };
+
     const VkAccelerationStructureCreateInfoKHR asCreateInfo = {
         VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
-        NULL,
-        0,
+        asInfo->hasMotionInfo ? (const void *)&motionInfo : NULL,
+        asInfo->hasMotionInfo ? (VkAccelerationStructureCreateFlagsKHR)
+                                    VK_ACCELERATION_STRUCTURE_CREATE_MOTION_BIT_NV
+                              : 0,
         asBuf,
         0,
         sizeResult.accelerationStructureSize,
@@ -921,6 +1005,19 @@ bool VulkanAccelerationStructureManager::FixUpReplayBDAs(
           tri.transformData.deviceAddress += bufAddr;
         else
           tri.transformData.deviceAddress = 0x0;
+
+        // the t = 1 vertices in the pNext chain point into the replayed input buffer too
+        for(VkBaseOutStructure *next = (VkBaseOutStructure *)tri.pNext; next != NULL;
+            next = next->pNext)
+        {
+          if(next->sType ==
+             VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV)
+          {
+            VkAccelerationStructureGeometryMotionTrianglesDataNV *motion =
+                (VkAccelerationStructureGeometryMotionTrianglesDataNV *)next;
+            motion->vertexData.deviceAddress += bufAddr;
+          }
+        }
 
         break;
       }

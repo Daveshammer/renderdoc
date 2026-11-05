@@ -54,6 +54,9 @@ struct VkAccelerationStructureInfo
 
     VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
     VkDeviceSize memOffset = 0;
+
+    bool hasMotion = false;
+    VkDeviceSize motionMemOffset = 0;
   };
 
   ~VkAccelerationStructureInfo();
@@ -63,7 +66,7 @@ struct VkAccelerationStructureInfo
 
   uint64_t GetSerialisedSize() const;
 
-  void convertGeometryData(rdcarray<VkAccelerationStructureGeometryKHR> &geometry) const;
+  void convertGeometryData(rdcarray<VkAccelerationStructureGeometryKHR> &geometry);
   rdcarray<VkAccelerationStructureBuildRangeInfoKHR> getBuildRanges() const;
 
   VkDeviceAddress address;
@@ -71,6 +74,10 @@ struct VkAccelerationStructureInfo
   VkAccelerationStructureTypeKHR type =
       VkAccelerationStructureTypeKHR::VK_ACCELERATION_STRUCTURE_TYPE_GENERIC_KHR;
   VkBuildAccelerationStructureFlagsKHR flags = 0;
+
+  bool hasMotionInfo = false;
+  uint32_t maxInstances = 0;
+  VkAccelerationStructureMotionInfoFlagsNV motionInfoFlags = 0;
 
   rdcarray<GeometryData> geometryData;
 
@@ -80,6 +87,8 @@ struct VkAccelerationStructureInfo
   MemoryAllocation uploadAlloc;
   VkBuffer uploadBuf = VK_NULL_HANDLE;
   VkAccelerationStructureKHR replayAS = VK_NULL_HANDLE;
+
+  rdcarray<VkAccelerationStructureGeometryMotionTrianglesDataNV> motionStructs;
 
   bool accelerationStructureBuilt = false;
 

@@ -4114,6 +4114,17 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
       record->accelerationStructureInfo = new VkAccelerationStructureInfo();
       record->accelerationStructureInfo->address = addr;
 
+      // record the motion create info so the AS can be recreated on replay
+      const VkAccelerationStructureMotionInfoNV *motionInfo =
+          (const VkAccelerationStructureMotionInfoNV *)FindNextStruct(
+              pCreateInfo, VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV);
+      if(motionInfo)
+      {
+        record->accelerationStructureInfo->hasMotionInfo = true;
+        record->accelerationStructureInfo->maxInstances = motionInfo->maxInstances;
+        record->accelerationStructureInfo->motionInfoFlags = motionInfo->flags;
+      }
+
       // store the base resource
       record->baseResource = bufferRecord->GetResourceID();
       record->baseResourceMem = bufferRecord->baseResource;
@@ -4277,6 +4288,17 @@ VkResult WrappedVulkan::vkCreateAccelerationStructure2KHR(
 
       record->accelerationStructureInfo = new VkAccelerationStructureInfo();
       record->accelerationStructureInfo->address = pCreateInfo->addressRange.address;
+
+      // record the motion create info so the AS can be recreated on replay
+      const VkAccelerationStructureMotionInfoNV *motionInfo =
+          (const VkAccelerationStructureMotionInfoNV *)FindNextStruct(
+              pCreateInfo, VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV);
+      if(motionInfo)
+      {
+        record->accelerationStructureInfo->hasMotionInfo = true;
+        record->accelerationStructureInfo->maxInstances = motionInfo->maxInstances;
+        record->accelerationStructureInfo->motionInfoFlags = motionInfo->flags;
+      }
 
       // store the base resource
       record->baseResourceMem = bufferRecord->baseResource;
